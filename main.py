@@ -13,9 +13,13 @@ def get_db():
     finally:
         db.close()
 
+@app.get("/test")
+def test():
+    return {"message": "Hello World"}
+#  http://127.0.0.1:8000/docs - to test API endpoints
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
-        host="0.0.0.0"
+        # host="0.0.0.0"
     )
