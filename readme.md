@@ -1,5 +1,8 @@
 # Dev Branch
 
+## TODO
+
+
 ## Basic build/install for Debian:
 - Download and install python3 and all other dependencies if missing
         
@@ -24,11 +27,27 @@
 
         sudo systemctl enable postgresql
 
-- Create a database called "convext"
+- Setup PostgreSQL user and database
+        
+        sudo -u postgres psql
+
+    If it returns an error try:
+        
+        sudo -u postgres psql template1
+
+    Once you get the progress prompt (=#), 
+    change user pass and create database `convext`. 
+    Type:
+        
+        ALTER USER postgres PASSWORD 'pass';
+
+        CREATE DATABASE convext;
+
+        \q
 
 - Start server
         
-        fastapi run
+        fastapi run --reload
 
     or
 

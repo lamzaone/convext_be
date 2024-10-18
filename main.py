@@ -7,21 +7,20 @@ import models
 import os
 import uvicorn
 
-# commented database part for now
-# models.Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.get("/test")
+# http://127.0.0.1:8000/docs - to test API endpoints
+@app.get("/")
 def test():
     return {"message": "Hello World"}
-#  http://127.0.0.1:8000/docs - to test API endpoints
 
 # very quick, hacky and primitive first try
 # TODO: Fix hardcoded paths
