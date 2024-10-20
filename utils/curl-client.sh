@@ -4,7 +4,7 @@
 # 54 bytes from the end
 
 curl -X 'POST' \
-  'http://alpha.lan:8000/upload' \
+  'http://127.0.0.1:8000/upload' \
   -H 'accept: application/json' \
   -H 'Content-Type: multipart/form-data' \
   -F 'files=@hello.txt;type=text/plain'
