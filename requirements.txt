@@ -1,6 +1,7 @@
-sqlalchemy
+apyio
 fastapi[standard]
-pydantic
 psycopg2
+pydantic
 requests
+sqlalchemy
 uvicorn[standard]
