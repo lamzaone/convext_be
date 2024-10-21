@@ -1,6 +1,7 @@
-sqlalchemy
-fastapi
-pydantic
+apyio
+fastapi[standard]
 psycopg2
+pydantic
 requests
+sqlalchemy
 uvicorn[standard]
