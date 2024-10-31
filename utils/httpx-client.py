@@ -20,5 +20,5 @@ with httpx.Client() as client:
     r = client.post(url, files=files)
     end = time.time()
     print(f'Time elapsed: {end - start}s')
-    print(r.status_code, r.json(), sep='\n')
+    print(r.status_code, r.content, sep='\n')
 
