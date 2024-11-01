@@ -4,6 +4,7 @@ from fastapi import (FastAPI, File, Form, UploadFile, Request, Response,
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, constr
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTasks
 import aiofiles
 import apyio
 import hashlib
@@ -25,7 +26,6 @@ def get_db():
     finally:
         db.close()
 
-
 # http://127.0.0.1:8000/docs - to test API endpoints
 @app.get('/')
 async def main():
@@ -45,11 +45,15 @@ async def upload(files: UploadFile):
     async with aiofiles.open(filePath, "wb") as recFile:
         await recFile.write(await files.read())
 
-    # Bytes return as response
+    # Background task for autodeletion after response
+    bgDel = BackgroundTasks()
+    bgDel.add_task(os.unlink, filePath)
+
+    # Bytes return as response, set headers and background task
     return FileResponse(path=filePath, headers={"Content-Disposition":
                                                 "attachment; filename=" +
                                                 fileRandName + fileExt},
-                        media_type=files.content_type)
+                        media_type=files.content_type, background=bgDel)
 
 if __name__ == "__main__":
     uvicorn.run(
