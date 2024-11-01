@@ -31,7 +31,7 @@ def get_db():
 async def main():
     return { "message" : "Hello world!" }
 
-# FileUpload way - write to file and return MD5 hash
+# File upload
 @app.post('/upload')
 async def upload(files: UploadFile):
     # Find file extension, randomize name, save file content to disk, find MD5
