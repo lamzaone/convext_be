@@ -31,6 +31,7 @@ def get_db():
     finally:
         db.close()
 
+# Function to delete files every 5 minutes (300s)
 async def del_files(filesToDelete: List):
     while True:
         await asyncio.sleep(300)
@@ -42,12 +43,12 @@ async def del_files(filesToDelete: List):
 async def main():
     return { "message" : "Hello world!" }
 
+# TODO: Add parameter to function for specifying format to convert to
 # File upload
 @app.post('/upload')
 async def upload(files: UploadFile):
-    # Find file extension, randomize name, save file content to disk, find MD5
-    # hash and send file response for download with Content-Disposition header
-    # attributes 'attachement; filename='
+
+    # Get extension, hash, new name and write file to disk
     fileExt = str(re.search(".[^/.]+$", files.filename).group()) 
     fileRandName = str(uuid.uuid4().hex)[:16] 
     fileHash = hashlib.md5(await files.read()).hexdigest()
@@ -55,17 +56,16 @@ async def upload(files: UploadFile):
     await files.seek(0)
     async with aiofiles.open(filePath, "wb") as recFile:
         await recFile.write(await files.read())
+
+    # Run bash conv on separate thead
     process = subprocess.Popen(['./convert.sh', filePath, 'png'], stdout=PIPE, stderr=PIPE)
+    # Get output from process
     stdout, stderr = process.communicate()
 
-
-    # Background task for autodeletion after response
+    # Call async taks to delete files
     asyncio.create_task(del_files([filePath, "convfiles/" + stdout.decode('ascii')]))
-    # bgDel = BackgroundTasks()
-    # bgDel.add_task(os.unlink, filePath)
-    # bgDel.add_task(os.unlink, "convfiles/" + str(stdout))
 
-    # Bytes return as response, set headers and background task
+    # Return message with converted file name
     return {"message" : stdout.decode('ascii') }
 
 if __name__ == "__main__":
