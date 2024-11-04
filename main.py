@@ -7,6 +7,7 @@ from pydantic import BaseModel, constr
 from typing import List
 from sqlalchemy.orm import Session
 from subprocess import Popen, PIPE
+from anyio import run_process, run
 import subprocess
 import aiofiles
 import asyncio
@@ -57,16 +58,29 @@ async def upload(files: UploadFile):
     async with aiofiles.open(filePath, "wb") as recFile:
         await recFile.write(await files.read())
 
+
+    # (?) Alternative way for async running (?)
+    # process = await run_process(['./convert.sh', filePath, 'png'])
+
     # Run bash conv on separate thead
-    process = subprocess.Popen(['./convert.sh', filePath, 'png'], stdout=PIPE, stderr=PIPE)
-    # Get output from process
+    process = subprocess.Popen(['./convert.sh', filePath, 'png'], 
+                               stdout=PIPE,
+                               stderr=PIPE)
+
+    # Get output from process; don't use at all for first variant just add
+    # process. to stdout in return
     stdout, stderr = process.communicate()
 
-    # Call async taks to delete files
-    asyncio.create_task(del_files([filePath, "convfiles/" + stdout.decode('ascii')]))
 
-    # Return message with converted file name
-    return {"message" : stdout.decode('ascii') }
+    # Call async taks to delete files; if using first variant async add
+    # process. before stdout
+    asyncio.create_task(del_files([filePath, "convfiles/" +
+                                   stdout.decode('ascii')]))
+
+    # Return message with converted file name; if first variant => process.
+    # before stdout
+    if stdout:
+        return {"message" : stdout.decode('ascii') }
 
 if __name__ == "__main__":
     uvicorn.run(

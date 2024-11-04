@@ -49,6 +49,14 @@
         
         fastapi run --reload
 
+        For better concurrency use
+
+        fastapi run --workers $(nproc)
+
     or
 
         uvicorn main:app --reload
+
+        Concurrency
+
+        uvicorn main:app --workers $(nproc)
