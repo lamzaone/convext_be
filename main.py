@@ -34,10 +34,9 @@ def get_db():
 
 # Function to delete files every 5 minutes (300s)
 async def del_files(filesToDelete: List):
-    while True:
-        await asyncio.sleep(300)
-        for file in filesToDelete:
-            os.unlink(file)
+    await asyncio.sleep(300)
+    for file in filesToDelete:
+        os.unlink(file)
 
 # http://127.0.0.1:8000/docs - to test API endpoints
 @app.get('/')

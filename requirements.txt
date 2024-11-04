@@ -1,3 +1,4 @@
+aiofiles
 apyio
 fastapi[standard]
 psycopg2
