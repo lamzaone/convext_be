@@ -9,6 +9,11 @@
         sudo apt install python3 python3-pip python3-virtualenv \
         python3-psycopg2 python3-dev libpq-dev
 
+- Download and install all auxiliary programs
+
+        sudo apt install ffmpeg libreoffice imagemagick ghostscript \
+        default-jre libreoffice-java-common
+
 - Create a virtual environment
         
         python3 -m venv venv
@@ -49,7 +54,7 @@
         
         fastapi run --reload
 
-        For better concurrency use
+    Multi-thread:
 
         fastapi run --workers $(nproc)
 
@@ -57,6 +62,6 @@
 
         uvicorn main:app --reload
 
-        Concurrency
+    Multi-thread:
 
         uvicorn main:app --workers $(nproc)

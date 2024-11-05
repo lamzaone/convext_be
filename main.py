@@ -43,10 +43,9 @@ async def del_files(filesToDelete: List):
 async def main():
     return { "message" : "Hello world!" }
 
-# TODO: Add parameter to function for specifying format to convert to
-# File upload
+# File upload; convExt gets extension to convert to from frontend
 @app.post('/upload')
-async def upload(files: UploadFile):
+async def upload(files: UploadFile, convExt: str):
 
     # Get extension, hash, new name and write file to disk
     fileExt = str(re.search(".[^/.]+$", files.filename).group()) 
@@ -62,7 +61,7 @@ async def upload(files: UploadFile):
     # process = await run_process(['./convert.sh', filePath, 'png'])
 
     # Run bash conv on separate thead
-    process = subprocess.Popen(['./convert.sh', filePath, 'png'], 
+    process = subprocess.Popen(['./convert.sh', filePath, convExt], 
                                stdout=PIPE,
                                stderr=PIPE)
 
@@ -78,8 +77,7 @@ async def upload(files: UploadFile):
 
     # Return message with converted file name; if first variant => process.
     # before stdout
-    if stdout:
-        return {"message" : stdout.decode('ascii') }
+    return {"message" : stdout.decode('ascii') }
 
 if __name__ == "__main__":
     uvicorn.run(
