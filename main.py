@@ -43,41 +43,81 @@ async def del_files(filesToDelete: List):
 async def main():
     return { "message" : "Hello world!" }
 
+# CORS middleware
+@app.middleware("http")
+async def middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
+
 # File upload; convExt gets extension to convert to from frontend
-@app.post('/upload')
-async def upload(files: UploadFile, convExt: str):
+# @app.post('/upload')
+# async def upload(files: UploadFile, convExt: str):
 
-    # Get extension, hash, new name and write file to disk
-    fileExt = str(re.search(".[^/.]+$", files.filename).group()) 
-    fileRandName = str(uuid.uuid4().hex)[:16] 
-    fileHash = hashlib.md5(await files.read()).hexdigest()
-    filePath = "files/" + fileRandName + fileExt
-    await files.seek(0)
-    async with aiofiles.open(filePath, "wb") as recFile:
-        await recFile.write(await files.read())
-
-
-    # (?) Alternative way for async running (?)
-    # process = await run_process(['./convert.sh', filePath, 'png'])
-
-    # Run bash conv on separate thead
-    process = subprocess.Popen(['./convert.sh', filePath, convExt], 
-                               stdout=PIPE,
-                               stderr=PIPE)
-
-    # Get output from process; don't use at all for first variant just add
-    # process. to stdout in return
-    stdout, stderr = process.communicate()
+#     # Get extension, hash, new name and write file to disk
+#     fileExt = str(re.search(".[^/.]+$", files.filename).group()) 
+#     fileRandName = str(uuid.uuid4().hex)[:16] 
+#     fileHash = hashlib.md5(await files.read()).hexdigest()
+#     filePath = "files/" + fileRandName + fileExt
+#     await files.seek(0)
+#     async with aiofiles.open(filePath, "wb") as recFile:
+#         await recFile.write(await files.read())
 
 
-    # Call async taks to delete files; if using first variant async add
-    # process. before stdout
-    asyncio.create_task(del_files([filePath, "convfiles/" +
-                                   stdout.decode('ascii')]))
+#     # (?) Alternative way for async running (?)
+#     # process = await run_process(['./convert.sh', filePath, 'png'])
 
-    # Return message with converted file name; if first variant => process.
-    # before stdout
-    return {"message" : stdout.decode('ascii') }
+#     # Run bash conv on separate thead
+#     process = subprocess.Popen(['./convert.sh', filePath, convExt], 
+#                                stdout=PIPE,
+#                                stderr=PIPE)
+
+#     # Get output from process; don't use at all for first variant just add
+#     # process. to stdout in return
+#     stdout, stderr = process.communicate()
+
+
+#     # Call async taks to delete files; if using first variant async add
+#     # process. before stdout
+#     asyncio.create_task(del_files([filePath, "convfiles/" +
+#                                    stdout.decode('ascii')]))
+
+#     # Return message with converted file name; if first variant => process.
+#     # before stdout
+#     return {"message" : stdout.decode('ascii') }
+
+
+@app.post("/upload")
+async def upload_files(
+    files: List[UploadFile] = File(...)
+):
+    file_info = []
+
+    for i, file in enumerate(files):
+        extension = file.filename.split(".").pop()          # Get file extension
+        filename = f"{uuid.uuid4().hex[:8]}.{extension}"    # Generate random filename
+        filepath = f"files/{filename}"                      # Path to save the file
+
+        # Write the file in chunks to the specified path
+        async with aiofiles.open(filepath, "wb") as out_file:
+            while content := await file.read(1024 * 1024):  # 1MB chunk size
+                await out_file.write(content)               # Write the chunk to the file
+
+        # Calculate MD5 hash of the saved file
+        async with aiofiles.open(filepath, "rb") as out_file:   
+            file_hash = hashlib.md5(await out_file.read()).hexdigest()  # Calculate MD5 hash
+
+        # Collect file information
+        file_info.append({
+            "filename": filename,
+            "hash": file_hash,
+        })
+
+    # TODO: Add the conversion logic here
+
+    return {"files": file_info}
+
+
 
 if __name__ == "__main__":
     uvicorn.run(
