@@ -51,20 +51,20 @@ async def del_files(filesToDelete: List):
     os.unlink(filesToDelete[0])
     os.unlink(filesToDelete[1])
 
-#Function to create zip archive
+# Function to create zip archive
 async def async_create_zip(convFilePathList: List[str]):
-  zipFileName=str(uuid.uuid4().hex)[:16]+ ".zip"
-  zipPath=os.path.join("convfiles",zipFileName)
+    zipFileName=str(uuid.uuid4().hex)[:16]+ ".zip"
+    zipPath=os.path.join("convfiles",zipFileName)
 
-#Separate thread to create zip archive
-  await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
-  return zipPath,zipFileName
+    # Separate thread to create zip archive
+    await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
+    return zipPath,zipFileName
 
-#Synchronous function to create the zip file
+# Synchronous function to create the zip file
 def create_zip_sync(convFilePathList: List[str], zipPath:str):
-  with zipfile.ZipFile(zipPath,"w",zipfile.ZIP_DEFLATED) as zipDescriptor:
-    for convFilePath in convFilePathList:
-      zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
+    with zipfile.ZipFile(zipPath,"w",zipfile.ZIP_DEFLATED) as zipDescriptor:
+        for convFilePath in convFilePathList:
+            zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
       
 
 
@@ -118,7 +118,7 @@ async def upload(files: List[UploadFile] = File(...),
         if convFileName == "-1":
             return { "message" : "-1" }
 
-        # Call async taks to delete files; if using first variant async add
+        # Call async task to delete files; if using first variant async add
         # process. before stdout
         asyncio.create_task(del_files([filePath, "convfiles/" + convFileName]))
         
@@ -127,11 +127,8 @@ async def upload(files: List[UploadFile] = File(...),
 
     # If we got multiple files, make a zip for them, set headers right for
     # response
-    # !!!IMPORTANT!!!
-    # TODO: FIND ASYNC WAY TO MAKE ZIP
-    # !!!
     if len(convFilePathList) > 1:
-        zipPath,zipFileName= await async_create_zip(convFilePathList)
+        zipPath,zipFileName = await async_create_zip(convFilePathList)
         return FileResponse(path=zipPath,
                             filename=zipFileName,
                             headers={ "Access-Control-Expose-Headers" :
@@ -144,8 +141,6 @@ async def upload(files: List[UploadFile] = File(...),
 
     # Just return the file and set headers
     else:
-        convFilePathList[0]
-        convFileName
         return FileResponse(path=convFilePathList[0],
                             filename=convFileName,
                             headers={ "Access-Control-Expose-Headers" :
@@ -155,37 +150,6 @@ async def upload(files: List[UploadFile] = File(...),
                                         + "\"" 
                                      }
                             )
-
-
-# @app.post("/upload")
-# async def upload_files(
-#     files: List[UploadFile] = File(...)
-# ):
-#     file_info = []
-# 
-#     for i, file in enumerate(files):
-#         extension = file.filename.split(".").pop()          # Get file extension
-#         filename = f"{uuid.uuid4().hex[:8]}.{extension}"    # Generate random filename
-#         filepath = f"files/{filename}"                      # Path to save the file
-# 
-#         # Write the file in chunks to the specified path
-#         async with aiofiles.open(filepath, "wb") as out_file:
-#             while content := await file.read(1024 * 1024):  # 1MB chunk size
-#                 await out_file.write(content)               # Write the chunk to the file
-# 
-#         # Calculate MD5 hash of the saved file
-#         async with aiofiles.open(filepath, "rb") as out_file:   
-#             file_hash = hashlib.md5(await out_file.read()).hexdigest()  # Calculate MD5 hash
-# 
-#         # Collect file information
-#         file_info.append({
-#             "filename": filename,
-#             "hash": file_hash,
-#         })
-# 
-#     # TODO: Add the conversion logic here
-# 
-#     return {"files": file_info}
 
 
 if __name__ == "__main__":
