@@ -48,8 +48,8 @@ def get_db():
 # Function to delete files every 5 minutes (300s)
 async def del_files(filesToDelete: List):
     await asyncio.sleep(300)
-    os.unlink(filesToDelete[0])
-    os.unlink(filesToDelete[1])
+    for file in filesToDelete:
+        os.unlink(file)
 
 # Function to create zip archive
 async def async_create_zip(convFilePathList: List[str]):
@@ -58,7 +58,7 @@ async def async_create_zip(convFilePathList: List[str]):
 
     # Separate thread to create zip archive
     await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
-    return zipPath,zipFileName
+    return zipPath, zipFileName
 
 # Synchronous function to create the zip file
 def create_zip_sync(convFilePathList: List[str], zipPath:str):
@@ -128,7 +128,8 @@ async def upload(files: List[UploadFile] = File(...),
     # If we got multiple files, make a zip for them, set headers right for
     # response
     if len(convFilePathList) > 1:
-        zipPath,zipFileName = await async_create_zip(convFilePathList)
+        zipPath, zipFileName = await async_create_zip(convFilePathList)
+        asyncio.create_task(del_files([zipPath]))
         return FileResponse(path=zipPath,
                             filename=zipFileName,
                             headers={ "Access-Control-Expose-Headers" :
