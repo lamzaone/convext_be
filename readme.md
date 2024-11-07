@@ -10,7 +10,7 @@
 ## Basic build/install for Debian:
 - Download and install python3 and all other dependencies if missing
         
-        sudo apt install python3 python3-pip python3-virtualenv \
+        sudo apt install python3 python3-pip python3-virtualenv python3-venv \
         python3-psycopg2 python3-dev libpq-dev
 
 - Download and install all auxiliary programs
