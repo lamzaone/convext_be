@@ -3,7 +3,7 @@
 ## TODO
 
 - ~~Multiple files upload support~~
-- Find async way to make ZIP files
+- ~~Find async way to make ZIP files~~
 - Add more formats for conversion
 - Start working on database/accounts/mini-cloud
 
