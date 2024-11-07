@@ -14,6 +14,7 @@ import subprocess
 import aiofiles
 import asyncio
 import apyio
+import anyio
 import hashlib
 import models
 import time
@@ -49,6 +50,24 @@ async def del_files(filesToDelete: List):
     await asyncio.sleep(300)
     os.unlink(filesToDelete[0])
     os.unlink(filesToDelete[1])
+
+#Function to create zip archive
+async def async_create_zip(convFilePathList: List[str]):
+  zipFileName=str(uuid.uuid4().hex)[:16]+ ".zip"
+  zipPath=os.path.join("convfiles",zipFileName)
+
+#Separate thread to create zip archive
+  await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
+  return zipPath,zipFileName
+
+#Synchronous function to create the zip file
+def create_zip_sync(convFilePathList: List[str], zipPath:str):
+  with zipfile.ZipFile(zipPath,"w",zipfile.ZIP_DEFLATED) as zipDescriptor:
+    for convFilePath in convFilePathList:
+      zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
+      
+
+
 
 # http://127.0.0.1:8000/docs - to test API endpoints
 @app.get('/')
@@ -112,12 +131,8 @@ async def upload(files: List[UploadFile] = File(...),
     # TODO: FIND ASYNC WAY TO MAKE ZIP
     # !!!
     if len(convFilePathList) > 1:
-        zipFileName = str(uuid.uuid4().hex)[:16] + ".zip"
-        zipDescriptor = zipfile.ZipFile("convfiles/" + zipFileName, "w",
-                                        zipfile.ZIP_DEFLATED)
-        for convFilePath in convFilePathList:
-            zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
-        return FileResponse(path="convfiles/" + zipFileName,
+        zipPath,zipFileName= await async_create_zip(convFilePathList)
+        return FileResponse(path=zipPath,
                             filename=zipFileName,
                             headers={ "Access-Control-Expose-Headers" :
                                      "Content-Disposition",
