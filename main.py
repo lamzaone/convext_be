@@ -35,7 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-   
 
 
 def get_db():
@@ -65,7 +64,6 @@ def create_zip_sync(convFilePathList: List[str], zipPath:str):
     with zipfile.ZipFile(zipPath,"w",zipfile.ZIP_DEFLATED) as zipDescriptor:
         for convFilePath in convFilePathList:
             zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
-      
 
 
 
@@ -93,7 +91,7 @@ async def upload(files: List[UploadFile] = File(...),
         fileExt = str(re.search(".[^/.]+$", file.filename).group()) 
         fileRandName = str(uuid.uuid4().hex)[:16] 
         filePath = "files/" + fileRandName + fileExt
-        convExt = extensions[extIndex]
+        convExt = extensions[extIndex][1:]
         async with aiofiles.open(filePath, "wb") as recFile:
             await recFile.write(await file.read())
 
