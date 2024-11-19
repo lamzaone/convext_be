@@ -1,7 +1,9 @@
+aiofiles
 apyio
 fastapi[standard]
 psycopg2
 pydantic
+python-magic
 requests
 sqlalchemy
 aiofiles

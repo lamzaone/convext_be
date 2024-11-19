@@ -2,12 +2,21 @@
 
 ## TODO
 
+- ~~Multiple files upload support~~
+- ~~Find async way to make ZIP files~~
+- Add more formats for conversion
+- Start working on database/accounts/mini-cloud
 
 ## Basic build/install for Debian:
 - Download and install python3 and all other dependencies if missing
         
-        sudo apt install python3 python3-pip python3-virtualenv \
+        sudo apt install python3 python3-pip python3-virtualenv python3-venv \
         python3-psycopg2 python3-dev libpq-dev
+
+- Download and install all auxiliary programs
+
+        sudo apt install ffmpeg libreoffice imagemagick ghostscript \
+        default-jre libreoffice-java-common
 
 - Create a virtual environment
         
@@ -21,7 +30,7 @@
 
 - Install PostgreSQL and start PostgreSQL
 
-        sudo apt install postgresql  postgresql-contrib
+        sudo apt install postgresql postgresql-contrib
 
         sudo systemctl start postgresql
 
@@ -49,6 +58,14 @@
         
         fastapi run --reload
 
+    Multi-thread:
+
+        fastapi run --workers $(nproc)
+
     or
 
         uvicorn main:app --reload
+
+    Multi-thread:
+
+        uvicorn main:app --workers $(nproc)
