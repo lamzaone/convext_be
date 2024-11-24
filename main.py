@@ -1,3 +1,4 @@
+# === LIBS ===
 from anyio import run_process, run
 from database import engine, SessionLocal 
 from fastapi import (BackgroundTasks, FastAPI, File, 
@@ -23,10 +24,17 @@ import re
 import uuid
 import uvicorn
 
+
+
+# === START UP/INIT ===
+
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
-# CORS middleware
+
+
+# === CORS MIDDLEWARE ===
+
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +44,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
+# === FUNCTIONS ===
 
 def get_db():
     db = SessionLocal()
@@ -48,108 +59,128 @@ def get_db():
 async def del_files(filesToDelete: List):
     await asyncio.sleep(300)
     for file in filesToDelete:
-        os.unlink(file)
+        try:
+            os.unlink(file)
+        except FileNotFoundError:
+            print("File " + file + " marked for deletion but not found.");
+
+# Function to write uploaded file to disk
+async def write_uploaded_file_to_disk(file: UploadFile, fileExt: str):
+    # Generate random name for file and create path
+    fileRandName = str(uuid.uuid4().hex)[:16] 
+    filePath = "files/" + fileRandName + fileExt
+
+    # Async write file to disk and return path
+    async with aiofiles.open(filePath, "wb") as recFile:
+        await recFile.write(await file.read())
+    return filePath
+
+# Function to write converted file to disk
+async def write_converted_file_to_disk(filePath: str, extension: str):
+    # Call conversion script in threaded subprocess
+    process = subprocess.Popen(['./convert.sh', filePath, extension[1:]],
+                               stdout=PIPE, stderr=PIPE)
+
+    # Get output from conversion script
+    stdout, stderr = process.communicate()
+    convFileName = stdout.decode('ascii')
+
+    # -1 if conversion failed, else create path for converted file and return it
+    if convFileName == "-1":
+        return "-1"
+    else:
+        return "convfiles/" + convFileName 
 
 # Function to create zip archive
-async def async_create_zip(convFilePathList: List[str]):
-    zipFileName=str(uuid.uuid4().hex)[:16]+ ".zip"
-    zipPath=os.path.join("convfiles",zipFileName)
+async def async_create_zip(convFilePathList: List[tuple]):
+    # Generate random name for archive and create path
+    zipFileName = str(uuid.uuid4().hex)[:16]+ ".zip"
+    zipPath = "convfiles/" + zipFileName
 
     # Separate thread to create zip archive
     await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
+
+    # Return zip path and filename
     return zipPath, zipFileName
 
 # Synchronous function to create the zip file
-def create_zip_sync(convFilePathList: List[str], zipPath:str):
-    with zipfile.ZipFile(zipPath,"w",zipfile.ZIP_DEFLATED) as zipDescriptor:
-        for convFilePath in convFilePathList:
-            zipDescriptor.write(convFilePath, os.path.basename(convFilePath))
+def create_zip_sync(convFilePathList: List[tuple], zipPath: str):
+    # Write converted files to archive with original name
+    with zipfile.ZipFile(zipPath, "w", zipfile.ZIP_DEFLATED) as zipDescriptor:
+        for convFileName, convFilePath in convFilePathList:
+            zipDescriptor.write(convFilePath, convFileName)
 
 
+
+# === API ENDPOINTS ===
 
 # http://127.0.0.1:8000/docs - to test API endpoints
 @app.get('/')
 async def main():
     return { "message" : "Hello world!" }
 
-# File upload; convExt gets extension to convert to from frontend
-# get list of files, get list of extensions, got through files, convert each
-# one with sh script and add path of converted file to a new list. 
-# If multiple files got converted, 
-#    make zip, return zip
-# else 
-#   just return converted file
 @app.post('/upload')
 async def upload(files: List[UploadFile] = File(...), 
                  extensions: List[str] = Form(...)):
 
-    # List of converted file names
+    # List of tuples with the following structure: [(converted filename,
+    # converted file path)]
     convFilePathList = []
 
-    # Get extension, new name and write file to disk
-    for extIndex, file in enumerate(files):
-        fileExt = str(re.search(".[^/.]+$", file.filename).group()) 
-        fileRandName = str(uuid.uuid4().hex)[:16] 
-        filePath = "files/" + fileRandName + fileExt
-        convExt = extensions[extIndex][1:]
-        async with aiofiles.open(filePath, "wb") as recFile:
-            await recFile.write(await file.read())
+    # Iterate over list of files and a list of extensions at the same time.
+    # Considered a tuple using zip()
+    for file, extension in zip(files, extensions):
+        # Get filename without extension and extension separately
+        fileNameNoExt, fileExt = os.path.splitext(file.filename)
 
+        # Write file to disk and get path
+        filePath = await write_uploaded_file_to_disk(file, fileExt)
+        # Convert file from file path and get converted file path
+        convFilePath = await write_converted_file_to_disk(filePath, extension)
 
-        # (?) Alternative way for async running (?)
-        # process = await run_process(['./convert.sh', filePath, 'png'])
-
-        # Run bash conv on separate thead
-        process = subprocess.Popen(['./convert.sh', filePath, convExt], 
-                                   stdout=PIPE,
-                                   stderr=PIPE)
-
-        # Get output from process; don't use at all for first variant just add
-        # process. to stdout in return
-        stdout, stderr = process.communicate()
-
-        
-        # Converted file name
-        convFileName = stdout.decode('ascii')
-
-        # If something break, return error code -1
-        if convFileName == "-1":
+        # Return -1 if missing file path for converted file
+        if convFilePath == "-1":
             return { "message" : "-1" }
 
-        # Call async task to delete files; if using first variant async add
-        # process. before stdout
-        asyncio.create_task(del_files([filePath, "convfiles/" + convFileName]))
+        # Set async task to delete both files
+        asyncio.create_task(del_files([filePath, convFilePath]))
         
-        # Add converted file name to list
-        convFilePathList.append("convfiles/" + convFileName)
+        # Add tuple of filename and file path to list
+        convFilePathList.append((fileNameNoExt + extension, convFilePath))
 
     # If we got multiple files, make a zip for them, set headers right for
     # response
     if len(convFilePathList) > 1:
         zipPath, zipFileName = await async_create_zip(convFilePathList)
-        asyncio.create_task(del_files([zipPath]))
-        return FileResponse(path=zipPath,
-                            filename=zipFileName,
-                            headers={ "Access-Control-Expose-Headers" :
-                                     "Content-Disposition",
-                                     "Content-Disposition" : 
-                                     "attachment; filename =\"" + zipFileName
-                                        + "\"" 
-                                     }
-                            )
 
+        # Set async task to delete archive
+        asyncio.create_task(del_files([zipPath]))
+        
+        return FileResponse(path=zipPath, filename=zipFileName, 
+                            headers={
+                                "Access-Control-Expose-Headers" : 
+                                    "Content-Disposition",
+                                "Content-Disposition" : 
+                                    "attachment; filename =\"" + zipFileName +
+                                    "\"" 
+                                }
+                            )
     # Just return the file and set headers
     else:
-        return FileResponse(path=convFilePathList[0],
-                            filename=convFileName,
-                            headers={ "Access-Control-Expose-Headers" :
-                                     "Content-Disposition",
-                                     "Content-Disposition" : 
-                                     "attachment; filename =\"" + convFileName
-                                        + "\"" 
-                                     }
+        return FileResponse(path=convFilePathList[0][1],
+                            filename=convFilePathList[0][0], 
+                            headers={
+                                "Access-Control-Expose-Headers" :
+                                    "Content-Disposition", 
+                                "Content-Disposition" :
+                                    "attachment; filename =\"" +
+                                    convFilePathList[0][0] + "\"" 
+                                }
                             )
 
+
+
+# === MAIN ===
 
 if __name__ == "__main__":
     uvicorn.run(
