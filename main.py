@@ -1,5 +1,9 @@
 # === LIBS ===
+import datetime
+import logging
+import secrets
 from anyio import run_process, run
+from fastapi.staticfiles import StaticFiles
 from database import engine, SessionLocal 
 from fastapi import (BackgroundTasks, FastAPI, File, 
                      Form, UploadFile, Request, Response,
@@ -7,7 +11,7 @@ from fastapi import (BackgroundTasks, FastAPI, File,
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr
-from typing import List
+from typing import Annotated, List
 from sqlalchemy.orm import Session
 from subprocess import Popen, PIPE
 import zipfile
@@ -23,6 +27,8 @@ import os
 import re
 import uuid
 import uvicorn
+import requests
+from datetime import datetime, timedelta
 
 
 
@@ -30,6 +36,7 @@ import uvicorn
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
+app.mount('/images', StaticFiles(directory='/images'), name="images")
 
 
 
@@ -54,6 +61,7 @@ def get_db():
         yield db
     finally:
         db.close()
+db_dependency = Annotated[Session, Depends(get_db)]
 
 # Function to delete files every 5 minutes (300s)
 async def del_files(filesToDelete: List):
@@ -178,12 +186,168 @@ async def upload(files: List[UploadFile] = File(...),
                                 }
                             )
 
+# === GOOGLE LOGIN ENDPOINTS ===
+# Base model for user data
+class User(BaseModel):
+    id: int
+    email: str
+    name: str
+    image: str
+    token: str
+    refresh_token: str
+    class Config:
+        from_attributes=True
 
+# Request model for user login
+class UserIn(BaseModel):
+    id_token: str
+    access_token: str
+
+# Request model for token validation
+class TokenRequest(BaseModel):
+    token: str
+def generate_token():
+    return secrets.token_urlsafe(64)
+
+def generate_refresh_token():
+    return secrets.token_urlsafe(64)
+
+def save_image_to_filesystem(image_url: str, filename: str) -> str:
+    """Download image from URL and save it to the filesystem."""
+    response = requests.get(image_url)
+    if response.status_code == 200:
+        file_path = os.path.join('./images', filename)
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+        return file_path
+    else:
+        logging.error(f"Failed to fetch image from URL: {image_url}")
+        raise HTTPException(status_code=400, detail="Failed to retrieve user picture")
+
+
+@app.post("/api/auth/google", response_model=User)
+def google_auth(token_request: UserIn, db: db_dependency):
+    # Verify the ID token
+    id_token_response = requests.get(
+        'https://www.googleapis.com/oauth2/v3/tokeninfo',
+        params={'id_token': token_request.id_token}
+    )
+    
+    if id_token_response.status_code != 200:
+        logging.error(f"Google token validation failed: {id_token_response.text}")
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+    google_data = id_token_response.json()
+    email = google_data.get('email')
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid token: no email found")
+
+    userinfo_response = requests.get(
+        'https://www.googleapis.com/oauth2/v3/userinfo',
+        headers={'Authorization': f'Bearer {token_request.access_token}'}
+    )
+
+    if userinfo_response.status_code != 200:
+        logging.error(f"Failed to get user info: {userinfo_response.text}")
+        raise HTTPException(status_code=400, detail="Failed to retrieve user information")
+
+    user_info = userinfo_response.json()
+    name = user_info.get('name')
+
+
+    db_user = db.query(models.User).filter(models.User.email == email).first()
+    if not db_user:
+        # Create a new user if they don't exist
+        picture_url = user_info.get('picture')
+
+        # Save user picture to filesystem and store the path in the database
+        picture_filename = f"{email}_profile.png" 
+        save_image_to_filesystem(picture_url, picture_filename)
+        refresh_token = generate_refresh_token()
+        db_user = models.User(
+            email=email,
+            name=name,
+            image=picture_filename,  
+            token=token_request.id_token,
+            refresh_token=refresh_token,
+            token_expiry=datetime.now() + timedelta(days=1),
+            refresh_token_expiry=datetime.now() + timedelta(days=7)
+        )
+        db.add(db_user)
+    else:
+        db_user.token = token_request.id_token
+        db_user.token_expiry = datetime.now() + timedelta(days=1)
+        db_user.refresh_token_expiry = datetime.now() + timedelta(days=7)
+
+    db.commit()
+    db.refresh(db_user)
+
+    # Create the user response
+    db_user_data = {
+        "id": db_user.id,
+        "email": db_user.email,
+        "name": db_user.name,
+        "image": f"http://127.0.0.1:8000/images/{db_user.image}",
+        "token": db_user.token,
+        "refresh_token": db_user.refresh_token
+    }
+    
+    return db_user_data
+
+# Refresh token
+@app.post("/api/auth/refresh", response_model=User)
+def refresh_tokens(token_request: TokenRequest, db: db_dependency):
+    db_user = db.query(models.User).filter(models.User.refresh_token == token_request.token).first()
+    if not db_user:
+        raise HTTPException(status_code=400, detail="Invalid refresh token")
+    
+    if db_user.refresh_token_expiry < datetime.now():
+        raise HTTPException(status_code=400, detail="Refresh token expired")
+
+    db_user.token = generate_token()
+    db_user.token_expiry = datetime.now() + timedelta(days=1)
+    db.commit()
+    db.refresh(db_user)
+    
+
+    user_response = User(
+        id=db_user.id,
+        email=db_user.email,
+        name=db_user.name,
+        image=f"http://127.0.0.1:8000/images/{db_user.image}",
+        token=db_user.token,
+        refresh_token=db_user.refresh_token,
+    )
+    
+    return user_response
+
+# Validate token
+@app.post("/api/auth/validate", response_model=User)
+def validate_token(token_request: TokenRequest, db: db_dependency):
+    db_user = db.query(models.User).filter(models.User.token == token_request.token).first()
+    if not db_user:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    
+    if db_user.token_expiry < datetime.now():
+        raise HTTPException(status_code=400, detail="Token expired")
+    
+
+    user_response = User(
+        id=db_user.id,
+        email=db_user.email,
+        name=db_user.name,
+        image=f"http://127.0.0.1:8000/images/{db_user.image}",
+        token=db_user.token,
+        refresh_token=db_user.refresh_token,
+    )
+    
+    return user_response
 
 # === MAIN ===
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
+        reload=True,
         # host="0.0.0.0"
     )
