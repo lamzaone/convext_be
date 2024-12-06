@@ -1,42 +1,48 @@
 # === LIBS ===
-import datetime
+
+import aiofiles
+import anyio
+import apyio
+import asyncio
+import hashlib
 import logging
+import models
+import os
+import re
+import requests
 import secrets
+import subprocess
+import time
+import utils
+import uuid
+import uvicorn
+import xattr
+import zipfile
+import zlib
 from anyio import run_process, run
-from fastapi.staticfiles import StaticFiles
+from base64 import urlsafe_b64decode as b64dec
+from base64 import urlsafe_b64encode as b64enc
+from cryptography.fernet import Fernet
 from database import engine, SessionLocal 
+from datetime import datetime, timedelta
 from fastapi import (BackgroundTasks, FastAPI, File, 
                      Form, UploadFile, Request, Response,
                      HTTPException, status, Depends)
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, constr
-from typing import Annotated, List
 from sqlalchemy.orm import Session
 from subprocess import Popen, PIPE
-import zipfile
-import subprocess
-import aiofiles
-import asyncio
-import apyio
-import anyio
-import hashlib
-import models
-import time
-import os
-import re
-import uuid
-import uvicorn
-import requests
-from datetime import datetime, timedelta
-
+from typing import Annotated, List
+from models import FileName
 
 
 # === START UP/INIT ===
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
-app.mount('/images', StaticFiles(directory='/images'), name="images")
+app.mount('/images', StaticFiles(directory=utils.get_project_root() / 'images'), name="images")
 
 
 
@@ -120,77 +126,13 @@ def create_zip_sync(convFilePathList: List[tuple], zipPath: str):
 
 
 
-# === API ENDPOINTS ===
-
-# http://127.0.0.1:8000/docs - to test API endpoints
-@app.get('/')
-async def main():
-    return { "message" : "Hello world!" }
-
-@app.post('/upload')
-async def upload(files: List[UploadFile] = File(...), 
-                 extensions: List[str] = Form(...)):
-
-    # List of tuples with the following structure: [(converted filename,
-    # converted file path)]
-    convFilePathList = []
-
-    # Iterate over list of files and a list of extensions at the same time.
-    # Considered a tuple using zip()
-    for file, extension in zip(files, extensions):
-        # Get filename without extension and extension separately
-        fileNameNoExt, fileExt = os.path.splitext(file.filename)
-
-        # Write file to disk and get path
-        filePath = await write_uploaded_file_to_disk(file, fileExt)
-        # Convert file from file path and get converted file path
-        convFilePath = await write_converted_file_to_disk(filePath, extension)
-
-        # Return -1 if missing file path for converted file
-        if convFilePath == "-1":
-            return { "message" : "-1" }
-
-        # Set async task to delete both files
-        asyncio.create_task(del_files([filePath, convFilePath]))
-        
-        # Add tuple of filename and file path to list
-        convFilePathList.append((fileNameNoExt + extension, convFilePath))
-
-    # If we got multiple files, make a zip for them, set headers right for
-    # response
-    if len(convFilePathList) > 1:
-        zipPath, zipFileName = await async_create_zip(convFilePathList)
-
-        # Set async task to delete archive
-        asyncio.create_task(del_files([zipPath]))
-        
-        return FileResponse(path=zipPath, filename=zipFileName, 
-                            headers={
-                                "Access-Control-Expose-Headers" : 
-                                    "Content-Disposition",
-                                "Content-Disposition" : 
-                                    "attachment; filename =\"" + zipFileName +
-                                    "\"" 
-                                }
-                            )
-    # Just return the file and set headers
-    else:
-        return FileResponse(path=convFilePathList[0][1],
-                            filename=convFilePathList[0][0], 
-                            headers={
-                                "Access-Control-Expose-Headers" :
-                                    "Content-Disposition", 
-                                "Content-Disposition" :
-                                    "attachment; filename =\"" +
-                                    convFilePathList[0][0] + "\"" 
-                                }
-                            )
-
 # === GOOGLE LOGIN ENDPOINTS ===
+
 # Base model for user data
 class User(BaseModel):
     id: int
     email: str
+    hashmail: str
     name: str
     image: str
     token: str
@@ -266,6 +208,7 @@ def google_auth(token_request: UserIn, db: db_dependency):
         refresh_token = generate_refresh_token()
         db_user = models.User(
             email=email,
+            hashmail = hashlib.md5(email.encode('ascii')).hexdigest(),
             name=name,
             image=picture_filename,  
             token=token_request.id_token,
@@ -274,6 +217,7 @@ def google_auth(token_request: UserIn, db: db_dependency):
             refresh_token_expiry=datetime.now() + timedelta(days=7)
         )
         db.add(db_user)
+        os.mkdir("users/" + db_user.hashmail)
     else:
         db_user.token = token_request.id_token
         db_user.token_expiry = datetime.now() + timedelta(days=1)
@@ -286,6 +230,7 @@ def google_auth(token_request: UserIn, db: db_dependency):
     db_user_data = {
         "id": db_user.id,
         "email": db_user.email,
+        "hashmail": db_user.hashmail,
         "name": db_user.name,
         "image": f"http://127.0.0.1:8000/images/{db_user.image}",
         "token": db_user.token,
@@ -313,6 +258,7 @@ def refresh_tokens(token_request: TokenRequest, db: db_dependency):
     user_response = User(
         id=db_user.id,
         email=db_user.email,
+        hashmail=db_user.hashmail,
         name=db_user.name,
         image=f"http://127.0.0.1:8000/images/{db_user.image}",
         token=db_user.token,
@@ -335,13 +281,197 @@ def validate_token(token_request: TokenRequest, db: db_dependency):
     user_response = User(
         id=db_user.id,
         email=db_user.email,
+        hashmail=db_user.hashmail,
         name=db_user.name,
         image=f"http://127.0.0.1:8000/images/{db_user.image}",
         token=db_user.token,
         refresh_token=db_user.refresh_token,
     )
-    
+
     return user_response
+
+
+
+# === API ENDPOINTS ===
+
+# http://127.0.0.1:8000/docs - to test API endpoints
+@app.get('/')
+async def main():
+    return { "message" : "Hello world!" }
+
+# Get shared file endpoint
+@app.get('/file/{encryptedPath}')
+async def get_shared_file(encryptedPath):
+    # Read encryption key from disk (maybe fix hardcoding path later)
+    async with aiofiles.open('key', 'rb') as keyFile:
+        key = await keyFile.read()
+    cipher = Fernet(key)
+    # Decypher path
+    decryptedPath = cipher.decrypt(encryptedPath)
+    # Set up path and filename to work with
+    filePath = "users/" + decryptedPath.decode()
+    fileName = os.path.basename(filePath)
+    # If file is missing return 404, if not sharable, return Forbbiden, else
+    # just return the file
+    if os.path.isfile(filePath) == False:
+        raise HTTPException(status_code=404, detail="Not Found")
+    elif xattr.getxattr(filePath, "user.shareable").decode() == "False":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    else:
+        return FileResponse(path=filePath, filename=fileName,
+                            headers={
+                                "Access-Control-Expose-Headers" : 
+                                    "Content-Disposition",
+                                "Content-Disposition" : 
+                                    "attachment; filename =\"" + fileName +
+                                    "\"" 
+                                }
+                            )
+
+# Get info about all files of user
+@app.post('/myfiles')
+async def get_files(tokenRequest: TokenRequest, db: db_dependency):
+    # Validate token and get response
+    userResponse = validate_token(tokenRequest, db)
+    files = {}
+    if userResponse: 
+        userPath = "users/" + userResponse.hashmail + "/"
+        # Get data about every file
+        for file in os.listdir(userPath):
+            fsize = os.stat(userPath + file).st_size
+            fdate = os.stat(userPath + file).st_mtime
+            if xattr.getxattr(userPath + file, "user.shareable"):
+                fshare = True
+            else:
+                fshare = False
+            files[file] = {
+                "size" : fsize,
+                "date" : fdate,
+                "share" : fshare
+            }
+    #return dictionary
+    return dict(sorted(files.items()))
+
+# Allow logged user to download own files
+@app.post('/myfiles/download')
+async def download(tokenRequest: TokenRequest, db: db_dependency, fileNameModel:
+                   FileName):
+    # Validate token and get response
+    userResponse = validate_token(tokenRequest, db)
+    if userResponse:
+        fileName = fileNameModel.filename
+        userPath = "users/" + userResponse.hashmail + "/"
+        return FileResponse(path=userPath + fileName, filename=fileName,
+                            headers={
+                                "Access-Control-Expose-Headers" : 
+                                    "Content-Disposition",
+                                "Content-Disposition" : 
+                                    "attachment; filename =\"" + fileName +
+                                    "\"" 
+                                }
+                            )
+
+@app.post('/myfiles/share')
+async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
+                          fileNameModel: FileName):
+    # Validate token
+    userResponse = validate_token(tokenRequest, db)
+    if userResponse:
+        fileName = fileNameModel.filename
+        userPath = userResponse.hashmail + "/"
+        pathToEncrypt = userPath + fileName
+        pathToWorkWith = "users/" + pathToEncrypt
+        # Toggle sharable state: Shared -> Not shared and Not shared -> Shared.
+        # If we toggle to Shared, generate encrypted path and return it with
+        # endpoint prefix
+        if xattr.getxattr(pathToWorkWith, "user.shareable").decode() == "True":
+            xattr.setxattr(pathToWorkWith, "user.shareable", "False".encode())
+            return { "message" : False }
+        else:
+            xattr.setxattr(pathToWorkWith, "user.shareable", "True".encode())
+            async with aiofiles.open('key', 'rb') as keyFile:
+                key = await keyFile.read()
+            cipher = Fernet(key)
+            encryptedPath = cipher.encrypt(pathToEncrypt.encode())
+            return { "message" : encryptedPath.decode() }
+
+# TODO: Endpoint for allowing user to delete files
+@app.post('/myfiles/delete')
+async def delete_user_files(tokenRequest: TokenRequest, db: db_dependency,
+                          fileNameModel: FileName):
+    return
+
+# TODO: Endpoint for uploading files, for both guest and logged in user
+@app.post('/upload')
+async def upload(db: db_dependency, tokenRequest: TokenRequest | None = None,
+                 files: List[UploadFile] = File(...), extensions: List[str] =
+                 Form(...)):
+
+    filePath = "files/"
+    if tokenRequest is not None:
+        userResponse = validate_token(tokenRequest)
+        if userResponse:
+            filePath = "users/" + userResponse.hashmail + "/"
+            auth = True
+
+
+
+    # List of tuples with the following structure: [(converted filename,
+    # converted file path)]
+    convFilePathList = []
+
+    # Iterate over list of files and a list of extensions at the same time.
+    # Considered a tuple using zip()
+    for file, extension in zip(files, extensions):
+        # Get filename without extension and extension separately
+        fileNameNoExt, fileExt = os.path.splitext(file.filename)
+
+        # Write file to disk and get path
+        filePath = await write_uploaded_file_to_disk(file, fileExt)
+        # Convert file from file path and get converted file path
+        convFilePath = await write_converted_file_to_disk(filePath, extension)
+
+        # Set async task to delete both files
+        asyncio.create_task(del_files([filePath, convFilePath]))
+
+        # Return -1 if missing file path for converted file
+        if convFilePath == "-1":
+            return { "message" : "-1" }
+        
+        # Add tuple of filename and file path to list
+        convFilePathList.append((fileNameNoExt + extension, convFilePath))
+
+    # If we got multiple files, make a zip for them, set headers right for
+    # response
+    if len(convFilePathList) > 1:
+        zipPath, zipFileName = await async_create_zip(convFilePathList)
+
+        # Set async task to delete archive
+        asyncio.create_task(del_files([zipPath]))
+        
+        return FileResponse(path=zipPath, filename=zipFileName, 
+                            headers={
+                                "Access-Control-Expose-Headers" : 
+                                    "Content-Disposition",
+                                "Content-Disposition" : 
+                                    "attachment; filename =\"" + zipFileName +
+                                    "\"" 
+                                }
+                            )
+    # Just return the file and set headers
+    else:
+        return FileResponse(path=convFilePathList[0][1],
+                            filename=convFilePathList[0][0], 
+                            headers={
+                                "Access-Control-Expose-Headers" :
+                                    "Content-Disposition", 
+                                "Content-Disposition" :
+                                    "attachment; filename =\"" +
+                                    convFilePathList[0][0] + "\"" 
+                                }
+                            )
+
+
 
 # === MAIN ===
 

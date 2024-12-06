@@ -53,7 +53,8 @@ case "$TO_EXT" in
     # TODO: Maybe rethink file conversion by adding compression. Converted pngs
     # get really big.
     "jpeg"|"png"|"webp")
-        convert "$ORG_PATH" -quality 90 -colorspace sRGB "convfiles/$CONV_NAME.$TO_EXT"
+        convert "$ORG_PATH" -quality 90 -colorspace sRGB \
+            "convfiles/$CONV_NAME.$TO_EXT"
         # pngquant -f --ext .png "convfiles/$CONV_NAME.$TO_EXT"
         echo -n "$CONV_NAME.$TO_EXT"
         ;;

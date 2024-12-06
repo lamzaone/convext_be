@@ -5,7 +5,9 @@
 - ~~Multiple files upload support~~
 - ~~Find async way to make ZIP files~~
 - Add more formats for conversion
-- Start working on database/accounts/mini-cloud
+- ~~Start working on database/accounts/mini-cloud~~
+- Rewrite upload endpoint
+- Write file deletion endpoint for logged in user
 
 ## Basic build/install for Debian:
 - Download and install python3 and all other dependencies if missing
