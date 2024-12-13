@@ -6,7 +6,7 @@
 - ~~Find async way to make ZIP files~~
 - Add more formats for conversion
 - ~~Start working on database/accounts/mini-cloud~~
-- Rewrite upload endpoint
+- ~~Rewrite upload endpoint~~
 - Write file deletion endpoint for logged in user
 
 ## Basic build/install for Debian:
