@@ -20,8 +20,6 @@ import xattr
 import zipfile
 import zlib
 from anyio import run_process, run
-from base64 import urlsafe_b64decode as b64dec
-from base64 import urlsafe_b64encode as b64enc
 from cryptography.fernet import Fernet
 from database import engine, SessionLocal 
 from datetime import datetime, timedelta
@@ -31,11 +29,11 @@ from fastapi import (BackgroundTasks, FastAPI, File,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from models import FileName
 from pydantic import BaseModel, constr
 from sqlalchemy.orm import Session
 from subprocess import Popen, PIPE
 from typing import Annotated, List
-from models import FileName
 
 
 # === START UP/INIT ===
@@ -70,46 +68,52 @@ def get_db():
 db_dependency = Annotated[Session, Depends(get_db)]
 
 # Function to delete files every 5 minutes (300s)
-async def del_files(filesToDelete: List):
-    await asyncio.sleep(300)
+async def del_files(filesToDelete: List, time: float):
+    await asyncio.sleep(time)
     for file in filesToDelete:
         try:
             os.unlink(file)
         except FileNotFoundError:
             print("File " + file + " marked for deletion but not found.");
 
-# Function to write uploaded file to disk
-async def write_uploaded_file_to_disk(file: UploadFile, fileExt: str):
-    # Generate random name for file and create path
-    fileRandName = str(uuid.uuid4().hex)[:16] 
-    filePath = "files/" + fileRandName + fileExt
+# Add number to name if file with same name exists in users directory
+async def fix_filename(filePath: str, fileName: str, fileExt: str):
+    counter = 1
+    fileNameCopy = fileName
+    while os.path.exists(filePath + fileName + fileExt):
+        fileName = fileNameCopy + " (" + str(counter) + ")"
+        counter += 1
+    return fileName
 
+
+# Function to write uploaded file to disk
+async def write_uploaded_file_to_disk(file: UploadFile, filePath: str):
     # Async write file to disk and return path
     async with aiofiles.open(filePath, "wb") as recFile:
         await recFile.write(await file.read())
-    return filePath
 
 # Function to write converted file to disk
-async def write_converted_file_to_disk(filePath: str, extension: str):
+async def write_converted_file_to_disk(auth: bool, filePath: str, extension: str):
     # Call conversion script in threaded subprocess
-    process = subprocess.Popen(['./convert.sh', filePath, extension[1:]],
-                               stdout=PIPE, stderr=PIPE)
+    process = subprocess.Popen(['./convert.sh', str(auth), filePath,
+                                extension[1:]], stdout=PIPE, stderr=PIPE)
 
     # Get output from conversion script
     stdout, stderr = process.communicate()
     convFileName = stdout.decode('ascii')
-
+    
     # -1 if conversion failed, else create path for converted file and return it
     if convFileName == "-1":
         return "-1"
     else:
-        return "convfiles/" + convFileName 
+        return convFileName 
 
 # Function to create zip archive
 async def async_create_zip(convFilePathList: List[tuple]):
     # Generate random name for archive and create path
     zipFileName = str(uuid.uuid4().hex)[:16]+ ".zip"
-    zipPath = "convfiles/" + zipFileName
+    zipPathDirName = os.path.dirname(convFilePathList[0][1])
+    zipPath = zipPathDirName + "/" + zipFileName
 
     # Separate thread to create zip archive
     await anyio.to_thread.run_sync(create_zip_sync, convFilePathList, zipPath)
@@ -395,26 +399,27 @@ async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
             encryptedPath = cipher.encrypt(pathToEncrypt.encode())
             return { "message" : encryptedPath.decode() }
 
-# TODO: Endpoint for allowing user to delete files
-@app.post('/myfiles/delete')
-async def delete_user_files(tokenRequest: TokenRequest, db: db_dependency,
-                          fileNameModel: FileName):
-    return
-
 # TODO: Endpoint for uploading files, for both guest and logged in user
 @app.post('/upload')
-async def upload(db: db_dependency, tokenRequest: TokenRequest | None = None,
-                 files: List[UploadFile] = File(...), extensions: List[str] =
-                 Form(...)):
+async def upload(db: db_dependency, tokenRequest: str = Form(None), 
+                 files: List[UploadFile] = File(...), 
+                 extensions: List[str] = Form(...)):
 
+    # Set default auth state and file path
+    auth = False
     filePath = "files/"
+
+    # Check is we received a token
     if tokenRequest is not None:
-        userResponse = validate_token(tokenRequest)
+        # Workaround to get tokenRequest object from string. Maybe we can
+        # fix it later.
+        tokenRequest = TokenRequest(token=tokenRequest)
+        # Validate token
+        userResponse = validate_token(tokenRequest, db)
         if userResponse:
-            filePath = "users/" + userResponse.hashmail + "/"
+            # Set auth state to true and change path
             auth = True
-
-
+            filePath = "users/" + userResponse.hashmail + "/"
 
     # List of tuples with the following structure: [(converted filename,
     # converted file path)]
@@ -423,16 +428,32 @@ async def upload(db: db_dependency, tokenRequest: TokenRequest | None = None,
     # Iterate over list of files and a list of extensions at the same time.
     # Considered a tuple using zip()
     for file, extension in zip(files, extensions):
+        # Keep a copy of the file path
+        filePathCopy = filePath
         # Get filename without extension and extension separately
         fileNameNoExt, fileExt = os.path.splitext(file.filename)
+        if auth:
+            # Add a number to the name if converted file already exists with
+            # same name
+            fileNameNoExt = await fix_filename(filePath, fileNameNoExt, extension)
+        else:
+            # Get random file name for guest user
+            fileNameNoExt = str(uuid.uuid4().hex)[:16] 
 
-        # Write file to disk and get path
-        filePath = await write_uploaded_file_to_disk(file, fileExt)
+        # Set up the proper file path
+        filePath = filePath + fileNameNoExt + fileExt
+        # Write file to disk
+        await write_uploaded_file_to_disk(file, filePath)
         # Convert file from file path and get converted file path
-        convFilePath = await write_converted_file_to_disk(filePath, extension)
+        convFilePath = await write_converted_file_to_disk(auth, filePath,
+                                                          extension)
 
-        # Set async task to delete both files
-        asyncio.create_task(del_files([filePath, convFilePath]))
+        if auth:
+            # Set async task to delete uploaded file
+            asyncio.create_task(del_files([filePath], 1))
+        else:
+            # Set async task to delete both files in 5 minutes if guest user
+            asyncio.create_task(del_files([filePath, convFilePath], 300))
 
         # Return -1 if missing file path for converted file
         if convFilePath == "-1":
@@ -441,13 +462,17 @@ async def upload(db: db_dependency, tokenRequest: TokenRequest | None = None,
         # Add tuple of filename and file path to list
         convFilePathList.append((fileNameNoExt + extension, convFilePath))
 
+        # Bring back original path for the next file
+        filePath = filePathCopy
+
     # If we got multiple files, make a zip for them, set headers right for
     # response
     if len(convFilePathList) > 1:
         zipPath, zipFileName = await async_create_zip(convFilePathList)
 
-        # Set async task to delete archive
-        asyncio.create_task(del_files([zipPath]))
+        # Set async task to delete archive in 5 min for guest user
+        if auth == False:
+            asyncio.create_task(del_files([zipPath], 300))
         
         return FileResponse(path=zipPath, filename=zipFileName, 
                             headers={
@@ -471,6 +496,11 @@ async def upload(db: db_dependency, tokenRequest: TokenRequest | None = None,
                                 }
                             )
 
+# TODO: Endpoint for allowing user to delete files
+@app.post('/myfiles/delete')
+async def delete_user_files(tokenRequest: TokenRequest, db: db_dependency,
+                          fileNameModel: FileName):
+    return
 
 
 # === MAIN ===
