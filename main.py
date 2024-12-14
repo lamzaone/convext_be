@@ -401,7 +401,7 @@ async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
             encryptedPath = cipher.encrypt(pathToEncrypt.encode())
             return { "message" : encryptedPath.decode() }
 
-# TODO: Endpoint for uploading files, for both guest and logged in user
+# Endpoint for uploading files, for both guest and logged in user
 @app.post('/upload')
 async def upload(db: db_dependency, tokenRequest: str = Form(None), 
                  files: List[UploadFile] = File(...), 
