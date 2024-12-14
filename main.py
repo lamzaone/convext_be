@@ -441,13 +441,7 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
             # TODO: Find a way to send labels from convert.sh instead of
             # extensions and yet have the extension ready to check if a file
             # with similiar name exist.
-            # Example #1: 
-            # Filename:    Label: 
-            # file.doc     compdf 
-            # Compdf means it should be a compressed pdf file. Now for
-            # authenticated user, check if file.pdf exists so you can
-            # fix_filename() if does.
-            # Example #2: 
+            # Example: 
             # Filename:    Label: 
             # file.wav     mp3@320k
             # mp3@320k should be mp3 file with 320k bitrate. Now for
