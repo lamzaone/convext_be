@@ -86,7 +86,6 @@ async def fix_filename(filePath: str, fileName: str, fileExt: str):
         counter += 1
     return fileName
 
-
 # Function to write uploaded file to disk
 async def write_uploaded_file_to_disk(file: UploadFile, filePath: str):
     # Async write file to disk and return path
@@ -347,7 +346,8 @@ async def get_files(tokenRequest: TokenRequest, db: db_dependency):
         for file in os.listdir(userPath):
             fsize = os.stat(userPath + file).st_size
             fdate = os.stat(userPath + file).st_mtime
-            if xattr.getxattr(userPath + file, "user.shareable"):
+            if (xattr.getxattr(userPath + file, "user.shareable").decode ==
+                "True"):
                 fshare = True
             else:
                 fshare = False
