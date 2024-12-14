@@ -40,7 +40,8 @@ from typing import Annotated, List
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
-app.mount('/images', StaticFiles(directory=utils.get_project_root() / 'images'), name="images")
+app.mount('/images', StaticFiles(directory=utils.get_project_root() /
+                                 'images'), name="images")
 
 
 
@@ -74,7 +75,7 @@ async def del_files(filesToDelete: List, time: float):
         try:
             os.unlink(file)
         except FileNotFoundError:
-            print("File " + file + " marked for deletion but not found.");
+            print("File " + file + " marked for deletion but not found.")
 
 # Add number to name if file with same name exists in users directory
 async def fix_filename(filePath: str, fileName: str, fileExt: str):
@@ -93,20 +94,22 @@ async def write_uploaded_file_to_disk(file: UploadFile, filePath: str):
         await recFile.write(await file.read())
 
 # Function to write converted file to disk
-async def write_converted_file_to_disk(auth: bool, filePath: str, extension: str):
+async def write_converted_file_to_disk(auth: bool, filePath: str, 
+                                       extension: str):
     # Call conversion script in threaded subprocess
     process = subprocess.Popen(['./convert.sh', str(auth), filePath,
                                 extension[1:]], stdout=PIPE, stderr=PIPE)
 
     # Get output from conversion script
     stdout, stderr = process.communicate()
-    convFileName = stdout.decode('ascii')
+    convFilePath = stdout.decode('ascii')
     
-    # -1 if conversion failed, else create path for converted file and return it
-    if convFileName == "-1":
+    # -1 if conversion failed, else create path for converted file and return
+    # it
+    if convFilePath == "-1":
         return "-1"
     else:
-        return convFileName 
+        return convFilePath 
 
 # Function to create zip archive
 async def async_create_zip(convFilePathList: List[tuple]):
@@ -386,8 +389,7 @@ async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
         pathToEncrypt = userPath + fileName
         pathToWorkWith = "users/" + pathToEncrypt
         # Toggle sharable state: Shared -> Not shared and Not shared -> Shared.
-        # If we toggle to Shared, generate encrypted path and return it with
-        # endpoint prefix
+        # If we toggle to Shared, generate encrypted path and return it 
         if xattr.getxattr(pathToWorkWith, "user.shareable").decode() == "True":
             xattr.setxattr(pathToWorkWith, "user.shareable", "False".encode())
             return { "message" : False }
@@ -435,7 +437,25 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
         if auth:
             # Add a number to the name if converted file already exists with
             # same name
-            fileNameNoExt = await fix_filename(filePath, fileNameNoExt, extension)
+            # !!!THIS NEEDS TO BE CHANGED IN THE FUTURE!!!
+            # TODO: Find a way to send labels from convert.sh instead of
+            # extensions and yet have the extension ready to check if a file
+            # with similiar name exist.
+            # Example #1: 
+            # Filename:    Label: 
+            # file.doc     compdf 
+            # Compdf means it should be a compressed pdf file. Now for
+            # authenticated user, check if file.pdf exists so you can
+            # fix_filename() if does.
+            # Example #2: 
+            # Filename:    Label: 
+            # file.wav     mp3@320k
+            # mp3@320k should be mp3 file with 320k bitrate. Now for
+            # authenticated user check if file.mp3 exists so you can
+            # fix_filename() if does.
+            # In other words, FIND A WAY TO GET AN EXTENSION FROM A LABEL.
+            fileNameNoExt = await fix_filename(filePath, fileNameNoExt,
+                                               extension)
         else:
             # Get random file name for guest user
             fileNameNoExt = str(uuid.uuid4().hex)[:16] 
@@ -451,6 +471,14 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
         if auth:
             # Set async task to delete uploaded file
             asyncio.create_task(del_files([filePath], 1))
+            # Set sharable extended attribute if file got converted alright,
+            # else catch error
+            try:
+                xattr.setxattr(convFilePath, "user.shareable",
+                               "False".encode())
+            except FileNotFoundError:
+                print(('File ' + convFilePath + ' marked for setting sharable'
+                       'flag but file not found.'))
         else:
             # Set async task to delete both files in 5 minutes if guest user
             asyncio.create_task(del_files([filePath, convFilePath], 300))
@@ -458,7 +486,7 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
         # Return -1 if missing file path for converted file
         if convFilePath == "-1":
             return { "message" : "-1" }
-        
+
         # Add tuple of filename and file path to list
         convFilePathList.append((fileNameNoExt + extension, convFilePath))
 
@@ -470,8 +498,11 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
     if len(convFilePathList) > 1:
         zipPath, zipFileName = await async_create_zip(convFilePathList)
 
-        # Set async task to delete archive in 5 min for guest user
-        if auth == False:
+        # Set extended attribute for archive if user is authenticated, else
+        # mark archive for deletion in 5 minutes if user is guest
+        if auth:
+            xattr.setxattr(zipPath, "user.shareable", "False".encode())
+        else:
             asyncio.create_task(del_files([zipPath], 300))
         
         return FileResponse(path=zipPath, filename=zipFileName, 
