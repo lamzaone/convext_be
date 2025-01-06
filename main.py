@@ -347,8 +347,7 @@ async def get_files(tokenRequest: TokenRequest, db: db_dependency):
         for file in os.listdir(userPath):
             fsize = os.stat(userPath + file).st_size
             fdate = os.stat(userPath + file).st_mtime
-            if (xattr.getxattr(userPath + file, "user.shareable").decode ==
-                "True"):
+            if (xattr.getxattr(userPath + file, "user.shareable").decode() == "True"):
                 fshare = True
             else:
                 fshare = False
@@ -400,7 +399,7 @@ async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
                 key = await keyFile.read()
             cipher = Fernet(key)
             encryptedPath = cipher.encrypt(pathToEncrypt.encode())
-            return { "message" : encryptedPath.decode() }
+            return { "message" : "http://127.0.0.1:8000/file/" + encryptedPath.decode() }
 
 # Endpoint for uploading files, for both guest and logged in user
 @app.post('/upload')
@@ -526,6 +525,18 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
 @app.post('/myfiles/delete')
 async def delete_user_files(tokenRequest: TokenRequest, db: db_dependency,
                           fileNameModel: FileName):
+    # Validate token
+    userResponse = validate_token(tokenRequest, db)
+    if userResponse:
+        fileName = fileNameModel.filename
+        userPath = userResponse.hashmail + "/"
+        pathToWorkWith = "users/" + userPath + fileName
+        # Delete file if exists, if not return 404
+        if os.path.isfile(pathToWorkWith):
+            os.unlink(pathToWorkWith)
+            return { "message" : "File " + fileName + " deleted." }
+        else:
+            raise HTTPException(status_code=404, detail="Not Found")
     return
 
 
