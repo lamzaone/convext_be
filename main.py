@@ -40,6 +40,7 @@ from typing import Annotated, List
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
+os.makedirs("images", exist_ok=True)
 app.mount('/images', StaticFiles(directory=utils.get_project_root() /
                                  'images'), name="images")
 
@@ -223,7 +224,7 @@ def google_auth(token_request: UserIn, db: db_dependency):
             refresh_token_expiry=datetime.now() + timedelta(days=7)
         )
         db.add(db_user)
-        os.mkdir("users/" + db_user.hashmail)
+        os.makedirs("users/" + db_user.hashmail, exist_ok=True)
     else:
         db_user.token = token_request.id_token
         db_user.token_expiry = datetime.now() + timedelta(days=1)
