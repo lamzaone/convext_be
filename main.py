@@ -356,6 +356,13 @@ async def get_files(tokenRequest: TokenRequest, db: db_dependency):
                 "date" : fdate,
                 "share" : fshare
             }
+            if (fshare == True):            
+                async with aiofiles.open('key', 'rb') as keyFile:
+                    key = await keyFile.read()
+                cipher = Fernet(key)
+                pathToEncrypt = userResponse.hashmail + "/" + file
+                encryptedPath = cipher.encrypt(pathToEncrypt.encode())
+                files[file]["link"] = "http://localhost:8000/file/" + encryptedPath.decode()
     #return dictionary
     return dict(sorted(files.items()))
 
