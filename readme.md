@@ -4,8 +4,14 @@
 
 - ~~Multiple files upload support~~
 - ~~Find async way to make ZIP files~~
+- Find a way to send labels from convert.sh instead of extensions and yet find
+  the extension of the converted file, so you can check the filename.
 - Add more formats for conversion
-- Start working on database/accounts/mini-cloud
+- ~~Start working on database/accounts/mini-cloud~~
+- ~~Rewrite upload endpoint~~
+- Write file deletion endpoint for logged in user
+- Check for disk usage by usage and block new uploads if not enought space
+  left(?)
 
 ## Basic build/install for Debian:
 - Download and install python3 and all other dependencies if missing

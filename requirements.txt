@@ -1,5 +1,6 @@
 aiofiles
 apyio
+cryptography
 fastapi[standard]
 psycopg2
 pydantic
@@ -8,3 +9,4 @@ requests
 sqlalchemy
 aiofiles
 uvicorn[standard]
+xattr
