@@ -402,11 +402,12 @@ async def set_shared_file(tokenRequest: TokenRequest, db: db_dependency,
             return { "message" : False }
         else:
             xattr.setxattr(pathToWorkWith, "user.shareable", "True".encode())
-            async with aiofiles.open('key', 'rb') as keyFile:
-                key = await keyFile.read()
-            cipher = Fernet(key)
-            encryptedPath = cipher.encrypt(pathToEncrypt.encode())
-            return { "message" : "http://127.0.0.1:8000/file/" + encryptedPath.decode() }
+            # async with aiofiles.open('key', 'rb') as keyFile:
+            #     key = await keyFile.read()
+            # cipher = Fernet(key)
+            # encryptedPath = cipher.encrypt(pathToEncrypt.encode())
+            # return { "message" : "http://127.0.0.1:8000/file/" + encryptedPath.decode() }
+            return { "message" : True }
 
 # Endpoint for uploading files, for both guest and logged in user
 @app.post('/upload')
