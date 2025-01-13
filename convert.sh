@@ -66,7 +66,7 @@ case "$TO_EXT" in
         ;;
 
     # Images
-    "jpeg"|"png"|"gif"|"webp")
+    "jpeg"|"png"|"gif"|"webp"|"jpg")
         convert "$FILE_PATH" -quality 90 -colorspace sRGB \
             "$CONV_PATH_WITH_NAME.$TO_EXT"
         echo -n "$CONV_PATH_WITH_NAME.$TO_EXT"
@@ -78,11 +78,11 @@ case "$TO_EXT" in
             "$CONV_PATH_WITH_NAME.mp4" >/dev/null 2>&1
         echo -n "$CONV_PATH_WITH_NAME.mp4"
         ;;
-    "webm")
-        ffmpeg -i "$FILE_PATH" -c:v libvpx-vp9 -c:a opus -crf 21 -b:a 128k \
-            "$CONV_PATH_WITH_NAME.webm" >/dev/null 2>&1
-        echo -n "$CONV_PATH_WITH_NAME.webm"
-        ;;
+    # "webm")
+    #     ffmpeg -i "$FILE_PATH" -c:v libvpx-vp9 -c:a opus -crf 21 -b:a 128k \
+    #         "$CONV_PATH_WITH_NAME.webm" >/dev/null 2>&1
+    #     echo -n "$CONV_PATH_WITH_NAME.webm"
+    #     ;;
     "avi")
         ffmpeg -i "$FILE_PATH" -c:v libx264 -crf 22 -preset fast \
             "$CONV_PATH_WITH_NAME.avi" >/dev/null 2>&1
