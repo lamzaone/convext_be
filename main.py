@@ -553,6 +553,6 @@ async def delete_user_files(tokenRequest: TokenRequest, db: db_dependency,
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
-        reload=True,
+        # reload=True,
         # host="0.0.0.0"
     )

@@ -22,7 +22,8 @@
 - Download and install all auxiliary programs
 
         sudo apt install ffmpeg libreoffice imagemagick ghostscript \
-        default-jre libreoffice-java-common
+        default-jre libreoffice-java-common unrar p7zip-full \
+        tar gzip unzip rar pdftohtml
 
 - Create a virtual environment
         
