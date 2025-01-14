@@ -472,7 +472,7 @@ async def upload(db: db_dependency, tokenRequest: str = Form(None),
 
         if auth:
             # Set async task to delete uploaded file
-            asyncio.create_task(del_files([filePath], 1))
+            asyncio.create_task(del_files([filePath], 2))
             # Set sharable extended attribute if file got converted alright,
             # else catch error
             try:
